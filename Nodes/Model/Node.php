@@ -271,12 +271,7 @@ class Node extends NodesAppModel {
 		if (!empty($data['filter'])) {
 			$filter = '%' . $data['filter'] . '%';
 			$conditions = array(
-				'OR' => array(
-					$this->alias . '.title LIKE' => $filter,
-					$this->alias . '.excerpt LIKE' => $filter,
-					$this->alias . '.body LIKE' => $filter,
-					$this->alias . '.terms LIKE' => $filter,
-				),
+				'OR' => $this->nodeLikeConditions($filter),
 			);
 		}
 		return $conditions;
@@ -295,12 +290,7 @@ class Node extends NodesAppModel {
 				$this->escapeField('status') => $this->status(),
 				'AND' => array(
 					array(
-						'OR' => array(
-							$this->alias . '.title LIKE' => $filter,
-							$this->alias . '.excerpt LIKE' => $filter,
-							$this->alias . '.body LIKE' => $filter,
-							$this->alias . '.terms LIKE' => $filter,
-						),
+						'OR' => $this->nodeLikeConditions($filter),
 					),
 					array(
 						$visibilityRolesField => '',
@@ -456,34 +446,27 @@ class Node extends NodesAppModel {
  * @see Model::_findAll()
  */
 	protected function _findPromoted($state, $query, $results = array()) {
-		if ($state === 'before') {
-			$_defaultFilters = array('contain', 'limit', 'order', 'conditions');
-			$_defaultContain = array(
-				'Meta',
-				'Taxonomy' => array(
-					'Term',
-					'Vocabulary',
-				),
-				'User',
-			);
-			$_defaultConditions = array(
-				$this->escapeField('status') => $this->status(),
-				$this->escapeField('promote') => self::STATUS_PROMOTED,
-				'OR' => array(
-					$this->escapeField('visibility_roles') => '',
-				),
-			);
-			$_defaultOrder = $this->escapeField('created') . ' DESC';
-			$_defaultLimit = Configure::read('Reading.nodes_per_page');
-
-			foreach ($_defaultFilters as $filter) {
-				$this->_mergeQueryFilters($query, $filter, ${'_default' . ucfirst($filter)});
-			}
-
-			return $query;
-		} else {
+		if ($state == 'after') {
 			return $results;
 		}
+		$query = $this->buildQueryOrderLimit($query);
+		$query = $this->buildQueryContain($query);
+		$query = $this->buildQueryStatus($query);
+		$query = $this->buildQueryRole($query);
+		// TODO: on original function, visibility_roles was missing the LIKE
+		// roleId part... why?? Was it a bug?
+		// Original was:
+		//'OR' => array(
+		//    $this->escapeField('visibility_roles') => '',
+		//    //-> no "visibility_roles LIKE => %<roleID>%" here??
+		//),
+
+		$q = array(
+			'conditions' => array(
+				$this->escapeField('promote') => self::STATUS_PROMOTED,
+			),
+		);
+		return $this->_mergeQueries($query, $q);
 	}
 
 /**
@@ -497,40 +480,23 @@ class Node extends NodesAppModel {
 			return $results;
 		}
 
-		if ($query['conditions'] === null) {
-			$query = Hash::merge($query, array(
-				'conditions' => array(),
-			));
-		}
-
 		$keys = array('id' => null, 'roleId' => null);
 		$args = array_merge($keys, array_intersect_key($query, $keys));
 		$query = array_diff_key($query, $args);
-		$visibilityRolesField = $this->escapeField('visibility_roles');
-		$query = Hash::merge(array(
+
+		$query = $this->buildQueryStatus($query);
+		$query = $this->buildQueryRole($query);
+		$query = $this->buildQueryContain($query);
+		$q = array(
 			'conditions' => array(
 				$this->escapeField() => $args['id'],
-				$this->escapeField('status') => $this->status(),
-				'OR' => array(
-					$visibilityRolesField => '',
-					$visibilityRolesField . ' LIKE' => '%"' . $args['roleId'] . '"%',
-				),
-			),
-			'contain' => array(
-				'Meta',
-				'Taxonomy' => array(
-					'Term',
-					'Vocabulary',
-				),
-				'User',
 			),
 			'cache' => array(
 				'name' => 'node_' . $args['roleId'] . '_' . $args['id'],
 				'config' => 'nodes_view',
 			),
-		), $query);
-
-		return $query;
+		);
+		return $this->_mergeQueries($query, $q);
 	}
 
 /**
@@ -553,32 +519,22 @@ class Node extends NodesAppModel {
 		$keys = array('slug' => null, 'type' => null, 'roleId' => null);
 		$args = array_merge($keys, array_intersect_key($query, $keys));
 		$query = array_diff_key($query, $args);
-		$visibilityRolesField = $this->escapeField('visibility_roles');
-		$query = Hash::merge(array(
+
+		$query = $this->buildQueryStatus($query);
+		$query = $this->buildQueryRole($query);
+		$query = $this->buildQueryContain($query);
+
+		$q = array(
 			'conditions' => array(
 				$this->escapeField('slug') => $args['slug'],
 				$this->escapeField('type') => $args['type'],
-				$this->escapeField('status') => $this->status(),
-				'OR' => array(
-					$visibilityRolesField => '',
-					$visibilityRolesField . ' LIKE' => '%"' . $args['roleId'] . '"%',
-				),
-			),
-			'contain' => array(
-				'Meta',
-				'Taxonomy' => array(
-					'Term',
-					'Vocabulary',
-				),
-				'User',
 			),
 			'cache' => array(
 				'name' => 'node_' . $args['roleId'] . '_' . $args['type'] . '_' . $args['slug'],
 				'config' => 'nodes_view',
 			),
-		), $query);
-
-		return $query;
+		);
+		return $this->_mergeQueries($query, $q);
 	}
 
 /**
@@ -595,40 +551,31 @@ class Node extends NodesAppModel {
 			return $results;
 		}
 
-		$q = isset($query['q']) ? $query['q'] : null;
-		$like = empty($q) ? '%' : '%' . $q . '%';
-		$roleId = isset($query['roleId']) ? $query['roleId'] : null;
-		$typeAlias = isset($query['typeAlias']) ? $query['typeAlias'] : null;
-		$visibilityRolesField = $this->escapeField('visibility_roles');
+		$query = $this->buildQueryOrderLimit($query);
+		$query = $this->buildQueryTypeAlias($query);
+		$query = $this->buildQueryStatus($query);
+		$query = $this->buildQueryRole($query);
+		$query = $this->buildQueryContain($query);
+		$query = $this->buildQueryLike($query);
 
-		$nodeOrConditions = array();
+		return $query;
+	}
 
-		if ($like) {
-			$nodeOrConditions = array_merge($nodeOrConditions, array(
-				$this->escapeField('title') . ' LIKE' => $like,
-				$this->escapeField('excerpt') . ' LIKE' => $like,
-				$this->escapeField('body') . ' LIKE' => $like,
-				$this->escapeField('terms') . ' LIKE' => $like,
-			));
-		}
+/**
+ * Provide methods for building queries in re-usable chunks ...
+ * TODO: Add some docstrings?
+ */
 
-		$defaults = array(
+	protected function buildQueryOrderLimit($query) {
+		$q = array(
 			'order' => $this->escapeField('created') . ' DESC',
 			'limit' => Configure::read('Reading.nodes_per_page'),
-			'conditions' => array(
-				$this->escapeField('status') => $this->status(),
-				'AND' => array(
-					array(
-						'OR' => $nodeOrConditions,
-					),
-					array(
-						'OR' => array(
-							$visibilityRolesField => '',
-							$visibilityRolesField . ' LIKE' => '%"' . $roleId . '"%',
-						),
-					),
-				),
-			),
+		);
+		return $this->_mergeQueries($query, $q);
+	}
+
+	protected function buildQueryContain($query) {
+		$q = array(
 			'contain' => array(
 				'Meta',
 				'Taxonomy' => array(
@@ -638,32 +585,125 @@ class Node extends NodesAppModel {
 				'User',
 			),
 		);
-		if (isset($typeAlias)) {
-			$defaults['conditions'][$this->escapeField('type')] = $typeAlias;
-		}
+		return $this->_mergeQueries($query, $q);
+	}
 
-		if (empty($query['conditions'])) {
-			$query['conditions'] = array();
+	protected function buildQueryTypeAlias($query) {
+		$q = array();
+		if (!empty($query['typeAlias'])) {
+			$q = array(
+				'conditions' => array(
+					$this->escapeField('type') => $query['typeAlias'],
+				),
+			);
 		}
-		$query = Hash::merge($defaults, $query);
+		return $this->_mergeQueries($query, $q);
+	}
 
-		return $query;
+	protected function buildQueryStatus($query) {
+		$q = array(
+			'conditions' => array(
+				$this->escapeField('status') => $this->status(),
+			),
+		);
+		return $this->_mergeQueries($query, $q);
+	}
+
+
+	protected function nodeLikeConditions($q) {
+		$nodeLikeConditions = array();
+		if (!empty($q)) {
+			$nodeLikeConditions = array_merge($nodeLikeConditions, array(
+				$this->escapeField('title') . ' LIKE' => $q,
+				$this->escapeField('excerpt') . ' LIKE' => $q,
+				$this->escapeField('body') . ' LIKE' => $q,
+				$this->escapeField('terms') . ' LIKE' => $q,
+			));
+		}
+		return $nodeLikeConditions;
+	}
+
+	protected function buildQueryLike($query) {
+		$term = isset($query['q']) ? $query['q'] : null;
+		$term = empty($term) ? '%' : '%' . $term . '%';
+
+		$nodeLikeConditions = $this->nodeLikeConditions($term);
+
+		$q = array(
+			'conditions' => array(
+				'AND' => array(
+					array(
+						'OR' => $nodeLikeConditions,
+					),
+				),
+			),
+		);
+		return $this->_mergeQueries($query, $q);
+	}
+
+	protected function buildQueryRole($query) {
+		$roleId = isset($query['roleId']) ? $query['roleId'] : null;
+		$visibilityRolesField = $this->escapeField('visibility_roles');
+
+		$q = array(
+			'conditions' => array(
+				'AND' => array(
+					array(
+						'OR' => array(
+							$visibilityRolesField => '',
+							$visibilityRolesField . ' LIKE' => '%"' . $roleId . '"%',
+						),
+					),
+				),
+			),
+		);
+		return $this->_mergeQueries($query, $q);
 	}
 
 /**
- * mergeQueryFilters
+ * This is an adapted version of Hash::merge, but treats 'AND' arrays as a
+ * special case, appending arrays inside it instead of merging them.
  *
- * @see Node::_findPromoted()
- * @return void
+ * For example:
+ *
+ * $q1 = array('conditions' => array(
+ *      'AND' => array(
+ *          array('OR' => 'LIKE_CONDITIONS',),),),);
+ *
+ * $q2 = array('conditions' => array(
+ *      'AND' => array(
+ *          array('OR' => 'OTHER_CONDITIONS',),),),);
+ *
+ * $correctly_merged = array('conditions' => array(
+ *      'AND' => array(
+ *          array('OR' => 'LIKE_CONDITIONS',
+ *          array('OR' => 'OTHER_CONDITIONS',),),),));
+ *
+ * @param array $data Array to be merged
+ * @param mixed $merge Array to merge with. The argument and all trailing arguments will be array cast when merged
+ * @return array Merged array
+ * @link http://book.cakephp.org/2.0/en/core-utility-libraries/hash.html#Hash::merge
  */
-	protected function _mergeQueryFilters(&$query, $key, $values) {
-		if (!empty($query[$key])) {
-			if (is_array($query[$key])) {
-				$query[$key] = Hash::merge($query[$key], $values);
-			}
-		} else {
-			$query[$key] = $values;
-		}
-	}
+	protected function _mergeQueries(array $data, $merge) {
+		$args = func_get_args();
+		$return = current($args);
 
+		while (($arg = next($args)) !== false) {
+			foreach ((array)$arg as $key => $val) {
+				if (!empty($return[$key]) && is_array($return[$key]) && is_array($val)) {
+					if($key == 'AND') {
+						$return[$key] = array_merge_recursive($return[$key], $val);
+					} else {
+						$return[$key] = $this->_mergeQueries($return[$key], $val);
+					}
+				} elseif (is_int($key) && isset($return[$key])) {
+					$return[] = $val;
+				} else {
+					$return[$key] = $val;
+				}
+			}
+		}
+		return $return;
+	}
 }
+

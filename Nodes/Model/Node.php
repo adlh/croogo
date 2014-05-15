@@ -466,7 +466,7 @@ class Node extends NodesAppModel {
 				$this->escapeField('promote') => self::STATUS_PROMOTED,
 			),
 		);
-		return $this->_mergeQueries($query, $q);
+		return $this->_mergeQueries($q, $query);
 	}
 
 /**
@@ -496,7 +496,7 @@ class Node extends NodesAppModel {
 				'config' => 'nodes_view',
 			),
 		);
-		return $this->_mergeQueries($query, $q);
+		return $this->_mergeQueries($q, $query);
 	}
 
 /**
@@ -534,7 +534,7 @@ class Node extends NodesAppModel {
 				'config' => 'nodes_view',
 			),
 		);
-		return $this->_mergeQueries($query, $q);
+		return $this->_mergeQueries($q, $query);
 	}
 
 /**
@@ -567,11 +567,14 @@ class Node extends NodesAppModel {
  */
 
 	protected function buildQueryOrderLimit($query) {
+		// If order and/or limit have empty values, unset them to let default
+		// values override them.
+
 		$q = array(
 			'order' => $this->escapeField('created') . ' DESC',
 			'limit' => Configure::read('Reading.nodes_per_page'),
 		);
-		return $this->_mergeQueries($query, $q);
+		return $this->_mergeQueries($q, $query);
 	}
 
 	protected function buildQueryContain($query) {
@@ -585,7 +588,7 @@ class Node extends NodesAppModel {
 				'User',
 			),
 		);
-		return $this->_mergeQueries($query, $q);
+		return $this->_mergeQueries($q, $query);
 	}
 
 	protected function buildQueryTypeAlias($query) {
@@ -597,7 +600,7 @@ class Node extends NodesAppModel {
 				),
 			);
 		}
-		return $this->_mergeQueries($query, $q);
+		return $this->_mergeQueries($q, $query);
 	}
 
 	protected function buildQueryStatus($query) {
@@ -606,7 +609,7 @@ class Node extends NodesAppModel {
 				$this->escapeField('status') => $this->status(),
 			),
 		);
-		return $this->_mergeQueries($query, $q);
+		return $this->_mergeQueries($q, $query);
 	}
 
 
@@ -638,7 +641,7 @@ class Node extends NodesAppModel {
 				),
 			),
 		);
-		return $this->_mergeQueries($query, $q);
+		return $this->_mergeQueries($q, $query);
 	}
 
 	protected function buildQueryRole($query) {
@@ -657,7 +660,7 @@ class Node extends NodesAppModel {
 				),
 			),
 		);
-		return $this->_mergeQueries($query, $q);
+		return $this->_mergeQueries($q, $query);
 	}
 
 /**
@@ -697,8 +700,11 @@ class Node extends NodesAppModel {
 						$return[$key] = $this->_mergeQueries($return[$key], $val);
 					}
 				} elseif (is_int($key) && isset($return[$key])) {
+					// join values in arrays with int-keys
 					$return[] = $val;
-				} else {
+				} elseif (!empty($val) || !isset($return[$key]) && empty($val)) {
+					// override $return value, if $val is not empty, or if key
+					// is not set or is empty on $return
 					$return[$key] = $val;
 				}
 			}

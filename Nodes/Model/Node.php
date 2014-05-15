@@ -702,7 +702,7 @@ class Node extends NodesAppModel {
 				} elseif (is_int($key) && isset($return[$key])) {
 					// join values in arrays with int-keys
 					$return[] = $val;
-				} elseif (!empty($val) || !isset($return[$key]) && empty($val)) {
+				} elseif (!empty($val) || (!isset($return[$key]) && empty($val))) {
 					// override $return value, if $val is not empty, or if key
 					// is not set or is empty on $return
 					$return[$key] = $val;

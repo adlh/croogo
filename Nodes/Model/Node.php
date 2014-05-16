@@ -563,13 +563,10 @@ class Node extends NodesAppModel {
 
 /**
  * Provide methods for building queries in re-usable chunks ...
- * TODO: Add some docstrings?
+ * TODO: Add some docstrings.
  */
 
 	protected function buildQueryOrderLimit($query) {
-		// If order and/or limit have empty values, unset them to let default
-		// values override them.
-
 		$q = array(
 			'order' => $this->escapeField('created') . ' DESC',
 			'limit' => Configure::read('Reading.nodes_per_page'),
@@ -664,20 +661,26 @@ class Node extends NodesAppModel {
 	}
 
 /**
- * This is an adapted version of Hash::merge, but treats 'AND' arrays as a
- * special case, appending arrays inside it instead of merging them.
+ * This is an adapted version of CakePHP's Hash::merge, but treats 'AND' arrays
+ * as a special case, appending arrays inside it instead of merging them. Also,
+ * empty values for an existing key on $return array shouldn't override
+ * non-empty values on it.
  *
  * For example:
  *
- * $q1 = array('conditions' => array(
- *      'AND' => array(
- *          array('OR' => 'LIKE_CONDITIONS',),),),);
+ * $data = array(
+ *      'order' => 'title DESC',
+ *      'conditions' => array(
+ *          'AND' => array(
+ *              array('OR' => 'LIKE_CONDITIONS',),),),);
  *
- * $q2 = array('conditions' => array(
+ * $merge = array('conditions' => array(
+ *      'order' => '',
  *      'AND' => array(
  *          array('OR' => 'OTHER_CONDITIONS',),),),);
  *
- * $correctly_merged = array('conditions' => array(
+ * $return = array('conditions' => array(
+ *      'order' => 'title DESC',
  *      'AND' => array(
  *          array('OR' => 'LIKE_CONDITIONS',
  *          array('OR' => 'OTHER_CONDITIONS',),),),));
@@ -685,7 +688,7 @@ class Node extends NodesAppModel {
  * @param array $data Array to be merged
  * @param mixed $merge Array to merge with. The argument and all trailing arguments will be array cast when merged
  * @return array Merged array
- * @link http://book.cakephp.org/2.0/en/core-utility-libraries/hash.html#Hash::merge
+ * @see http://book.cakephp.org/2.0/en/core-utility-libraries/hash.html#Hash::merge
  */
 	protected function _mergeQueries(array $data, $merge) {
 		$args = func_get_args();
